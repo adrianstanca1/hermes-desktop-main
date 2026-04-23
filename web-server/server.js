@@ -1374,8 +1374,90 @@ app.post('/api/chat', express.json(), (req, res) => {
     io.emit('reasoning_complete');
 });
 
+// ─── Per-socket PTY management ────────────────────────────────────────────────
+const activePtys = new Map(); // socketId -> { proc, alive }
+
 io.on('connection', (socket) => {
-    console.log('Client connected to websocket');
+    console.log(`[WS] Client connected: ${socket.id}`);
+
+    // ── Broadcast gateway/health file changes to all clients ──────────────────
+    // (already handled by file watchers above — no action needed here)
+
+    // ── Spawn a dedicated bash shell for this socket ─────────────────────────
+    function spawnShell() {
+        if (activePtys.has(socket.id)) {
+            const old = activePtys.get(socket.id);
+            if (old.alive) {
+                try { old.proc.kill(); } catch(e) {}
+            }
+        }
+
+        const shellEnv = {
+            ...process.env,
+            TERM: 'xterm-256color',
+            COLORTERM: 'truecolor',
+            HOME: os.homedir(),
+            PS1: '\\[\\033[01;32m\\]hermes\\[\\033[00m\\]:\\[\\033[01;34m\\]\\w\\[\\033[00m\\]$ ',
+        };
+
+        const proc = spawn('bash', ['--login'], {
+            env: shellEnv,
+            cwd: os.homedir(),
+            stdio: ['pipe', 'pipe', 'pipe'],
+        });
+
+        const ptyEntry = { proc, alive: true };
+        activePtys.set(socket.id, ptyEntry);
+
+        proc.stdout.on('data', (data) => {
+            socket.emit('pty_output', data.toString('utf8'));
+        });
+
+        proc.stderr.on('data', (data) => {
+            socket.emit('pty_output', data.toString('utf8'));
+        });
+
+        proc.on('close', (code) => {
+            ptyEntry.alive = false;
+            activePtys.delete(socket.id);
+            socket.emit('pty_output', `\r\n\x1b[33m[shell exited with code ${code}]\x1b[0m\r\n`);
+            socket.emit('pty_closed', { code });
+        });
+
+        proc.on('error', (err) => {
+            socket.emit('pty_output', `\r\n\x1b[31m[error: ${err.message}]\x1b[0m\r\n`);
+        });
+
+        // Welcome banner
+        socket.emit('pty_output', '\x1b[36m╔══════════════════════════════════════╗\r\n║  Hermes Interactive Terminal         ║\r\n║  Type any command. Ctrl+C to abort.  ║\r\n╚══════════════════════════════════════╝\x1b[0m\r\n');
+        socket.emit('pty_ready');
+    }
+
+    // Spawn immediately on connection
+    spawnShell();
+
+    // ── Receive keystrokes from Xterm.js ─────────────────────────────────────
+    socket.on('pty_input', (data) => {
+        const entry = activePtys.get(socket.id);
+        if (entry && entry.alive && entry.proc.stdin.writable) {
+            entry.proc.stdin.write(data);
+        }
+    });
+
+    // ── Reconnect request ─────────────────────────────────────────────────────
+    socket.on('pty_reconnect', () => {
+        spawnShell();
+    });
+
+    // ── Disconnect: kill the shell ────────────────────────────────────────────
+    socket.on('disconnect', () => {
+        console.log(`[WS] Client disconnected: ${socket.id}`);
+        const entry = activePtys.get(socket.id);
+        if (entry && entry.alive) {
+            try { entry.proc.kill('SIGHUP'); } catch(e) {}
+        }
+        activePtys.delete(socket.id);
+    });
 });
 
 server.listen(port, () => {

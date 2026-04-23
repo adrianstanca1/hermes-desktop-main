@@ -7,8 +7,11 @@
     <link rel="stylesheet" href="styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
 </head>
 <body>
     <div class="dashboard-container">
@@ -419,15 +422,17 @@
                         </div>
                         <!-- Right: Shell + Scripts -->
                         <div style="display: flex; flex-direction: column; gap: 1.5rem;">
-                            <!-- Shell Terminal -->
-                            <div class="glass" style="padding: 1.5rem;">
-                                <h3 style="color: var(--accent-color); font-size: 1rem; margin: 0 0 12px 0;"><i class="fas fa-terminal"></i> Shell (Safe Mode)</h3>
-                                <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-                                    <input type="text" id="shell-input" placeholder="ls -la ~/Desktop" style="flex:1;background:rgba(0,0,0,.4);border:1px solid var(--glass-border);padding:10px;border-radius:8px;color:var(--accent-color);font-family:monospace;font-size:.85rem;box-sizing:border-box;">
-                                    <button class="btn-outline btn-sm" id="btn-shell-run"><i class="fas fa-play"></i> Run</button>
+                            <!-- Interactive Terminal -->
+                            <div class="glass" style="padding: 1.5rem; display: flex; flex-direction: column;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                    <h3 style="color: var(--accent-color); font-size: 1rem; margin: 0;"><i class="fas fa-terminal"></i> Interactive Terminal</h3>
+                                    <div style="display: flex; gap: 8px; align-items: center;">
+                                        <span id="pty-status" style="font-size: .72rem; padding: 2px 10px; border-radius: 20px; background: rgba(255,85,85,0.15); color: #f87171;"><i class="fas fa-circle" style="font-size:.5rem;"></i> Disconnected</span>
+                                        <button class="btn-outline btn-sm" id="btn-terminal-reconnect" style="padding: 3px 10px; font-size: .75rem;"><i class="fas fa-sync-alt"></i> Reconnect</button>
+                                        <button class="btn-outline btn-sm" id="btn-terminal-clear" style="padding: 3px 10px; font-size: .75rem;"><i class="fas fa-eraser"></i> Clear</button>
+                                    </div>
                                 </div>
-                                <div style="font-size:.7rem;color:#666;margin-bottom:8px;">Allowed: ls, cat, head, tail, find, grep, mdfind, ollama, node, python3, git, curl, brew, df, du, ps…</div>
-                                <div id="shell-output" style="background:rgba(0,0,0,.5);border:1px solid var(--glass-border);border-radius:8px;padding:12px;font-family:monospace;font-size:.78rem;color:#4ade80;max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;"></div>
+                                <div id="xterm-container" style="background: #0d0f14; border-radius: 10px; padding: 8px; border: 1px solid var(--glass-border); min-height: 340px; overflow: hidden;"></div>
                             </div>
                             <!-- Scripts Discovery -->
                             <div class="glass" style="padding: 1.5rem;">

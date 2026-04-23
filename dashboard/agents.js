@@ -723,8 +723,8 @@ function buildSection(title, contentHtml) {
 }
 
 // ── Resources Tab — Local Machine Interaction ──────────────────
-let _shellHistory = [];
-let _shellHistIdx = -1;
+let _xtermInstance = null;
+let _xtermSocket = null;
 
 function setupResources() {
     // Spotlight Search
@@ -733,23 +733,105 @@ function setupResources() {
     if (searchBtn) searchBtn.addEventListener('click', runLocalSearch);
     if (searchInput) searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') runLocalSearch(); });
 
-    // Shell
-    const shellBtn = document.getElementById('btn-shell-run');
-    const shellInput = document.getElementById('shell-input');
-    if (shellBtn) shellBtn.addEventListener('click', runShellCommand);
-    if (shellInput) {
-        shellInput.addEventListener('keydown', e => {
-            if (e.key === 'Enter') runShellCommand();
-            if (e.key === 'ArrowUp') { e.preventDefault(); if (_shellHistory.length && _shellHistIdx < _shellHistory.length - 1) { _shellHistIdx++; shellInput.value = _shellHistory[_shellHistory.length - 1 - _shellHistIdx]; } }
-            if (e.key === 'ArrowDown') { e.preventDefault(); if (_shellHistIdx > 0) { _shellHistIdx--; shellInput.value = _shellHistory[_shellHistory.length - 1 - _shellHistIdx]; } else { _shellHistIdx = -1; shellInput.value = ''; } }
-        });
-    }
-
     // Scripts
     document.getElementById('btn-scan-scripts')?.addEventListener('click', scanLocalScripts);
 
     // Auto-load file browser with Desktop on first visit
     scanLocalDir('Desktop');
+
+    // Initialize terminal
+    initTerminal();
+}
+
+function initTerminal() {
+    const container = document.getElementById('xterm-container');
+    if (!container || typeof Terminal === 'undefined') return;
+
+    // Tear down existing instance if reinitialising
+    if (_xtermInstance) {
+        _xtermInstance.dispose();
+        _xtermInstance = null;
+    }
+
+    const term = new Terminal({
+        cursorBlink: true,
+        cursorStyle: 'bar',
+        fontFamily: '"JetBrains Mono", "Cascadia Code", "Fira Code", Menlo, monospace',
+        fontSize: 13,
+        lineHeight: 1.4,
+        theme: {
+            background: '#0d0f14',
+            foreground: '#c5c6c7',
+            cursor: '#66fcf1',
+            cursorAccent: '#0d0f14',
+            selectionBackground: 'rgba(102,252,241,0.2)',
+            black: '#1f2833',   red: '#f87171',   green: '#4ade80',  yellow: '#facc15',
+            blue: '#60a5fa',    magenta: '#c084fc', cyan: '#66fcf1',  white: '#c5c6c7',
+            brightBlack: '#45a29e', brightRed: '#f87171', brightGreen: '#4ade80', brightYellow: '#fef08a',
+            brightBlue: '#93c5fd', brightMagenta: '#e879f9', brightCyan: '#67e8f9', brightWhite: '#f1f5f9'
+        },
+        allowTransparency: true,
+        scrollback: 5000,
+        convertEol: true,
+    });
+
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(container);
+    fitAddon.fit();
+    _xtermInstance = term;
+
+    // Resize observer so terminal fills its container responsively
+    const ro = new ResizeObserver(() => { try { fitAddon.fit(); } catch(e) {} });
+    ro.observe(container);
+
+    // Wire to the existing global socket (created in app.js)
+    function wireSocket() {
+        if (typeof io === 'undefined') return;
+        _xtermSocket = typeof socket !== 'undefined' ? socket : io();
+
+        const statusEl = document.getElementById('pty-status');
+        const setStatus = (connected) => {
+            if (!statusEl) return;
+            if (connected) {
+                statusEl.style.background = 'rgba(74,222,128,0.15)';
+                statusEl.style.color = '#4ade80';
+                statusEl.innerHTML = '<i class="fas fa-circle" style="font-size:.5rem;"></i> Connected';
+            } else {
+                statusEl.style.background = 'rgba(248,113,113,0.15)';
+                statusEl.style.color = '#f87171';
+                statusEl.innerHTML = '<i class="fas fa-circle" style="font-size:.5rem;"></i> Disconnected';
+            }
+        };
+
+        _xtermSocket.on('pty_ready', () => setStatus(true));
+        _xtermSocket.on('pty_closed', () => setStatus(false));
+        _xtermSocket.on('disconnect', () => setStatus(false));
+        _xtermSocket.on('connect', () => {
+            // Re-emit connection triggers spawnShell on server side
+        });
+
+        _xtermSocket.on('pty_output', (data) => {
+            term.write(data);
+        });
+
+        // Send keystrokes to server
+        term.onData((data) => {
+            _xtermSocket.emit('pty_input', data);
+        });
+    }
+
+    wireSocket();
+
+    // Control buttons
+    document.getElementById('btn-terminal-clear')?.addEventListener('click', () => {
+        term.clear();
+    });
+
+    document.getElementById('btn-terminal-reconnect')?.addEventListener('click', () => {
+        term.write('\r\n\x1b[33m[Reconnecting…]\x1b[0m\r\n');
+        if (_xtermSocket) _xtermSocket.emit('pty_reconnect');
+    });
 }
 
 function runLocalSearch() {
@@ -842,63 +924,25 @@ function scanLocalDir(dirPath) {
 }
 
 function previewFile(filePath) {
-    const shellOutput = document.getElementById('shell-output');
-    if (!shellOutput) return;
-    shellOutput.innerHTML = '<span style="color:#888;"><i class="fas fa-circle-notch fa-spin"></i> Reading file…</span>';
+    if (!_xtermInstance) return;
+    _xtermInstance.write(`\r\n\x1b[36m── Reading: ${filePath} ──\x1b[0m\r\n`);
     fetch('/api/local/read', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path: filePath }) })
         .then(r => r.json())
         .then(data => {
-            if (data.error) { shellOutput.innerHTML = `<span style="color:#f87171;">${data.error}</span>`; return; }
+            if (data.error) { _xtermInstance.write(`\x1b[31m${data.error}\x1b[0m\r\n`); return; }
             if (data.type === 'directory') {
-                shellOutput.innerHTML = `<span style="color:var(--accent-color);">Directory: ${data.items.length} items</span>\n${data.items.join('\n')}`;
+                _xtermInstance.write(`\x1b[36mDirectory: ${data.items.length} items\x1b[0m\r\n${data.items.join('\r\n')}\r\n`);
                 return;
             }
             if (data.type === 'binary') {
-                shellOutput.innerHTML = `<span style="color:#facc15;">Binary file (${data.ext}, ${formatSize(data.size)}) — cannot display</span>`;
+                _xtermInstance.write(`\x1b[33mBinary file (${data.ext}, ${formatSize(data.size)}) — cannot display\x1b[0m\r\n`);
                 return;
             }
-            shellOutput.innerHTML = `<span style="color:var(--accent-color);">── ${filePath} (${data.lines} lines, ${formatSize(data.size)}) ──</span>\n${escapeHtml(data.content)}`;
+            _xtermInstance.write(`\x1b[36m── ${filePath} (${data.lines} lines, ${formatSize(data.size)}) ──\x1b[0m\r\n${data.content}\r\n`);
         })
-        .catch(err => { shellOutput.innerHTML = `<span style="color:#f87171;">Error: ${err.message}</span>`; });
+        .catch(err => { _xtermInstance.write(`\x1b[31mError: ${err.message}\x1b[0m\r\n`); });
 }
 
-function runShellCommand() {
-    const input = document.getElementById('shell-input');
-    const output = document.getElementById('shell-output');
-    const cmd = input?.value?.trim();
-    if (!cmd || !output) return;
-
-    _shellHistory.push(cmd);
-    _shellHistIdx = -1;
-
-    const prev = output.innerHTML;
-    output.innerHTML = prev + (prev ? '\n' : '') + `<span style="color:var(--accent-color);">$ ${escapeHtml(cmd)}</span>\n<span style="color:#888;"><i class="fas fa-circle-notch fa-spin"></i> executing…</span>`;
-    output.scrollTop = output.scrollHeight;
-
-    fetch('/api/local/shell', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ command: cmd }) })
-        .then(r => r.json())
-        .then(data => {
-            // Remove the "executing" line
-            const lines = output.innerHTML.split('\n');
-            lines.pop(); // remove spinner
-            let result = '';
-            if (data.error) {
-                result = `<span style="color:#f87171;">✖ ${escapeHtml(data.error)}</span>`;
-            } else {
-                if (data.stdout) result += escapeHtml(data.stdout);
-                if (data.stderr) result += `\n<span style="color:#facc15;">${escapeHtml(data.stderr)}</span>`;
-                if (data.exit_code !== 0) result += `\n<span style="color:#f87171;">exit code: ${data.exit_code}</span>`;
-                if (data.truncated) result += `\n<span style="color:#facc15;">[output truncated at 50KB]</span>`;
-            }
-            output.innerHTML = lines.join('\n') + '\n' + result;
-            output.scrollTop = output.scrollHeight;
-        })
-        .catch(err => {
-            output.innerHTML += `\n<span style="color:#f87171;">Network error: ${err.message}</span>`;
-        });
-
-    input.value = '';
-}
 
 function scanLocalScripts() {
     const listEl = document.getElementById('local-scripts-list');
