@@ -112,7 +112,7 @@ app.get('/api/stats', (req, res) => {
         systemMem: memUsage
     };
     
-    if (!DB_EXISTS) {
+    if (!db) {
         // No database — return real zeros, not fake numbers
         stats.activeSessions = 0;
         stats.totalTokens = 0;
@@ -134,7 +134,7 @@ app.get('/api/stats', (req, res) => {
 });
 
 app.get('/api/recent-activity', (req, res) => {
-    if (!DB_EXISTS) {
+    if (!db) {
         return res.json([]);
     }
     db.all(`SELECT id, title, model, started_at, message_count FROM sessions ORDER BY started_at DESC LIMIT 10`, [], (err, rows) => {
@@ -145,7 +145,7 @@ app.get('/api/recent-activity', (req, res) => {
 
 app.get('/api/session/:id', (req, res) => {
     const sessionId = req.params.id;
-    if (!DB_EXISTS) {
+    if (!db) {
         return res.status(404).json({ error: 'No database available — cannot retrieve session data' });
     }
 
@@ -160,7 +160,7 @@ app.get('/api/session/:id', (req, res) => {
 
 app.delete('/api/session/:id', (req, res) => {
     const sessionId = req.params.id;
-    if (!DB_EXISTS) return res.status(404).json({ error: 'No database available — cannot delete session' });
+    if (!db) return res.status(404).json({ error: 'No database available — cannot delete session' });
 
     db.run(`DELETE FROM messages WHERE session_id = ?`, [sessionId], (err) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -172,7 +172,7 @@ app.delete('/api/session/:id', (req, res) => {
 });
 
 app.get('/api/chart-data', (req, res) => {
-    if (!DB_EXISTS) {
+    if (!db) {
         return res.json([]);
     }
     const query = `
@@ -235,7 +235,7 @@ app.get('/api/monitor/telemetry', (req, res) => {
 });
 
 app.get('/api/monitor/sessions', (req, res) => {
-    if (!DB_EXISTS) return res.json([]);
+    if (!db) return res.json([]);
     db.all('SELECT id, source, model, started_at, message_count, input_tokens, output_tokens, estimated_cost_usd, title FROM sessions ORDER BY started_at DESC LIMIT 20', [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(rows || []);
@@ -628,7 +628,7 @@ app.get('/api/system/discover', async (req, res) => {
     } catch(e) {}
 
     // ── 10. Database stats ──
-    if (db && DB_EXISTS) {
+    if (db) {
         try {
             const dbStat = fs.statSync(DB_PATH);
             result.database = {
@@ -1164,12 +1164,13 @@ app.get('/api/settings/module-content/:type/:name', (req, res) => {
 app.post('/api/settings/purge-memory', (req, res) => {
     // Clear in-process chat memory
     chatMemory.length = 0;
+    currentSessionId = null;
     io.emit('memory_purged', { timestamp: new Date().toISOString() });
     res.json({ success: true, message: 'All active memory caches purged' });
 });
 
 app.post('/api/settings/purge-sessions', (req, res) => {
-    if (!DB_EXISTS) return res.status(404).json({ error: 'No database available' });
+    if (!db) return res.status(404).json({ error: 'No database available' });
     db.run(`DELETE FROM messages`, (err) => {
         if (err) return res.status(500).json({ error: err.message });
         db.run(`DELETE FROM sessions`, (err2) => {
@@ -1257,12 +1258,28 @@ app.post('/api/gateway/platform/:name/reconnect', (req, res) => {
 
 // Memory System for Chat
 const chatMemory = [];
+let currentSessionId = null;
 
+function saveMessage(role, contentStr) {
+    if (!db) return;
+    if (!currentSessionId) {
+        db.run(`INSERT INTO sessions (title, started_at, model, message_count) VALUES (?, ?, ?, ?)`, ['Active Session', Math.floor(Date.now()/1000), 'auto', 1], function(err) {
+            if (!err) {
+                currentSessionId = this.lastID;
+                db.run(`INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)`, [currentSessionId, role, contentStr, Math.floor(Date.now()/1000)]);
+            }
+        });
+    } else {
+        db.run(`INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)`, [currentSessionId, role, contentStr, Math.floor(Date.now()/1000)]);
+        db.run(`UPDATE sessions SET message_count = message_count + 1 WHERE id = ?`, [currentSessionId]);
+    }
+}
 app.post('/api/chat', express.json(), (req, res) => {
     const userMsg = req.body.message || '';
     
-    // Store user message in memory
+    // Store user message in memory and db
     chatMemory.push({ role: 'user', content: userMsg });
+    saveMessage('user', userMsg);
 
     // Ensure memory doesn't grow unbounded
     const config = readConfig();
@@ -1293,6 +1310,7 @@ app.post('/api/chat', express.json(), (req, res) => {
                     const parsed = JSON.parse(data);
                     const reply = parsed.message?.content || 'No response from Ollama';
                     chatMemory.push({ role: 'assistant', content: reply });
+                    saveMessage('assistant', reply);
                     res.json({ response: reply, timestamp: new Date().toISOString() });
                     io.emit('reasoning_complete');
                 } catch(e) { 
@@ -1331,6 +1349,7 @@ app.post('/api/chat', express.json(), (req, res) => {
                     const parsed = JSON.parse(data);
                     const reply = parsed.choices?.[0]?.message?.content || 'No response from API';
                     chatMemory.push({ role: 'assistant', content: reply });
+                    saveMessage('assistant', reply);
                     res.json({ response: reply, timestamp: new Date().toISOString() });
                     io.emit('reasoning_complete');
                 } catch(e) { 
