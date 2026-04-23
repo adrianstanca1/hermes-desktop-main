@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hermes - Admin Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo-container">
+                <img src="../assets/dashboard_logo.png" alt="Logo" class="logo">
+                <h2>Hermes</h2>
+            </div>
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" data-view="overview"><i class="fas fa-home"></i> Overview</a>
+                <a href="#" class="nav-item" data-view="gateway"><i class="fas fa-network-wired"></i> Gateway</a>
+                <a href="#" class="nav-item" data-view="agents"><i class="fas fa-robot"></i> Agents</a>
+                <a href="#" class="nav-item" data-view="chat"><i class="fas fa-comment-dots"></i> Active Chat</a>
+                <a href="#" class="nav-item" data-view="sessions"><i class="fas fa-history"></i> Sessions</a>
+                <a href="#" class="nav-item" data-view="cron"><i class="fas fa-clock"></i> Cron Jobs</a>
+                <a href="#" class="nav-item" data-view="skills"><i class="fas fa-bolt"></i> Skills</a>
+            </nav>
+            <div class="sidebar-footer">
+                <a href="#" class="nav-item" data-view="settings"><i class="fas fa-cog"></i> Settings</a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="topbar">
+                <div class="search-bar">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="global-search" placeholder="Search sessions, jobs, skills...">
+                </div>
+                <div class="user-profile">
+                    <div class="notifications"><i class="fas fa-bell"></i><span class="badge">3</span></div>
+                    <img src="../assets/user_avatar.png" alt="User Avatar" class="avatar">
+                </div>
+            </header>
+
+            <!-- VIEWS -->
+            <section class="dashboard-overview view-section active-view" id="view-overview">
+                <div class="greeting" style="display: flex; justify-content: space-between; align-items: center; overflow: hidden; position: relative; border-radius: 20px; padding: 2rem; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); margin-bottom: 2rem;">
+                    <div style="position: relative; z-index: 2;">
+                        <h2>Welcome to Hermes Gateway</h2>
+                        <p>Your central command for autonomous agent orchestration.</p>
+                    </div>
+                    <!-- 3D Node Map Container -->
+                    <div id="three-container" style="position: absolute; right: 0; top: -50px; width: 400px; height: 400px; z-index: 1; pointer-events: none; opacity: 0.8;"></div>
+                </div>
+
+                <div class="metrics-grid">
+                    <div class="metric-card glass">
+                        <div class="metric-icon"><i class="fas fa-brain"></i></div>
+                        <div class="metric-info">
+                            <h3>Active Sessions</h3>
+                            <p class="value" id="val-sessions">...</p>
+                            <span class="trend positive"><i class="fas fa-arrow-up"></i> 12%</span>
+                        </div>
+                    </div>
+                    <div class="metric-card glass">
+                        <div class="metric-icon"><i class="fas fa-microchip"></i></div>
+                        <div class="metric-info">
+                            <h3>Total Tokens</h3>
+                            <p class="value" id="val-tokens">...</p>
+                            <span class="trend positive"><i class="fas fa-arrow-up"></i> 8%</span>
+                        </div>
+                    </div>
+                    <div class="metric-card glass">
+                        <div class="metric-icon"><i class="fas fa-tasks"></i></div>
+                        <div class="metric-info">
+                            <h3>Cron Jobs</h3>
+                            <p class="value" id="val-cron">...</p>
+                            <span class="trend neutral"><i class="fas fa-minus"></i> 0%</span>
+                        </div>
+                    </div>
+                    <div class="metric-card glass">
+                        <div class="metric-icon"><i class="fas fa-server"></i></div>
+                        <div class="metric-info">
+                            <h3>Sys RAM</h3>
+                            <p class="value" id="val-mem">...</p>
+                            <span class="trend neutral" id="val-cpu"><i class="fas fa-microchip"></i> CPU ...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chart-section glass">
+                    <div class="section-header">
+                        <h2>Token Usage (Last 7 Days)</h2>
+                        <button class="btn-outline">Export</button>
+                    </div>
+                    <div style="height: 300px; width: 100%;">
+                        <canvas id="usageChart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Sessions View -->
+            <section class="dashboard-overview view-section" id="view-sessions" style="display: none;">
+                <div class="welcome-text">
+                    <h1>Recent Sessions</h1>
+                </div>
+                <div class="glass" style="padding: 1.5rem; overflow-x: auto;">
+                    <table class="data-table" id="sessions-table">
+                        <thead>
+                            <tr>
+                                <th>Title</th>
+                                <th>Model</th>
+                                <th>Started At</th>
+                                <th>Messages</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Cron Jobs View -->
+            <section class="dashboard-overview view-section" id="view-cron" style="display: none;">
+                <div class="welcome-text">
+                    <h1>Cron Jobs</h1>
+                </div>
+                <div class="glass" style="padding: 1.5rem;">
+                    <div id="cron-list" class="flex-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Skills View -->
+            <section class="dashboard-overview view-section" id="view-skills" style="display: none;">
+                <div class="welcome-text">
+                    <h1>Available Skills</h1>
+                </div>
+                <div class="glass" style="padding: 1.5rem;">
+                    <div id="skills-list" class="flex-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Gateway View -->
+            <section class="dashboard-overview view-section" id="view-gateway" style="display: none;">
+                <div class="welcome-text" style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h1>Hermes Gateway</h1>
+                        <p id="gateway-status-text">Status: Checking...</p>
+                    </div>
+                    <button class="btn-outline" id="btn-restart-gateway" style="border-color: var(--trend-negative); color: var(--trend-negative);"><i class="fas fa-power-off"></i> Restart Gateway</button>
+                </div>
+                
+                <div class="metrics-grid" id="provider-grid">
+                    <!-- Populated by JS -->
+                </div>
+
+                <div class="chart-section glass" style="margin-bottom: 2rem;">
+                    <div class="section-header">
+                        <h2>Platforms</h2>
+                    </div>
+                    <div id="platforms-list" class="flex-list" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <div class="chart-section glass" style="margin-bottom: 2rem;">
+                    <div class="section-header">
+                        <h2>Plugins & Tools</h2>
+                    </div>
+                    <p id="plugins-tools-text">Plugins: 0 | Tools: 0</p>
+                </div>
+
+                <div class="chart-section glass" style="padding: 0;">
+                    <div class="section-header" style="padding: 1rem 2rem 0; display: flex; justify-content: space-between; align-items: center;">
+                        <h2>Live Logs</h2>
+                        <button class="btn-outline btn-sm" id="btn-clear-logs" style="font-size: 0.8rem; padding: 4px 12px;"><i class="fas fa-trash"></i> Clear Logs</button>
+                    </div>
+                    <div class="terminal-container" id="terminal-output">
+                    </div>
+                </div>
+            </section>
+
+            <!-- Agents View -->
+            <section class="dashboard-overview view-section" id="view-agents" style="display: none;">
+                <div class="welcome-text" style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h1>Agent Fleet</h1>
+                        <p>Configure, deploy, and monitor autonomous agents across providers.</p>
+                    </div>
+                    <button class="btn-outline" id="btn-new-agent" style="background: var(--accent-color); color: #000; border: none; font-weight: bold; padding: 10px 20px;">
+                        <i class="fas fa-plus"></i> New Agent
+                    </button>
+                </div>
+
+                <!-- Agent Tab Nav -->
+                <div style="display: flex; gap: 5px; margin-bottom: 2rem; border-bottom: 1px solid var(--glass-border);">
+                    <button class="agent-tab active-agent-tab" data-atab="fleet" style="padding: 10px 20px; background: transparent; border: none; color: var(--accent-color); border-bottom: 2px solid var(--accent-color); font-family: inherit; font-size: 0.9rem; cursor: pointer;"><i class="fas fa-satellite-dish"></i> Fleet</button>
+                    <button class="agent-tab" data-atab="providers" style="padding: 10px 20px; background: transparent; border: none; color: var(--text-main); border-bottom: 2px solid transparent; font-family: inherit; font-size: 0.9rem; cursor: pointer;"><i class="fas fa-cloud"></i> API Providers</button>
+                    <button class="agent-tab" data-atab="pipelines" style="padding: 10px 20px; background: transparent; border: none; color: var(--text-main); border-bottom: 2px solid transparent; font-family: inherit; font-size: 0.9rem; cursor: pointer;"><i class="fas fa-project-diagram"></i> Pipelines</button>
+                    <button class="agent-tab" data-atab="monitor" style="padding: 10px 20px; background: transparent; border: none; color: var(--text-main); border-bottom: 2px solid transparent; font-family: inherit; font-size: 0.9rem; cursor: pointer;"><i class="fas fa-chart-line"></i> Monitor</button>
+                    <button class="agent-tab" data-atab="templates" style="padding: 10px 20px; background: transparent; border: none; color: var(--text-main); border-bottom: 2px solid transparent; font-family: inherit; font-size: 0.9rem; cursor: pointer;"><i class="fas fa-layer-group"></i> Templates</button>
+                    <button class="agent-tab" data-atab="resources" style="padding: 10px 20px; background: transparent; border: none; color: var(--text-main); border-bottom: 2px solid transparent; font-family: inherit; font-size: 0.9rem; cursor: pointer;"><i class="fas fa-hdd"></i> Resources</button>
+                </div>
+
+                <!-- Tab: Fleet -->
+                <div class="agent-panel" id="atab-fleet">
+                    <!-- Stats row -->
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem;">
+                        <div class="glass" style="padding: 1.2rem; text-align: center;">
+                            <div style="font-size: 2rem; font-weight: bold; color: var(--accent-color);" id="agent-stat-total">0</div>
+                            <div style="font-size: 0.8rem; color: #888; margin-top: 4px;">Total Agents</div>
+                        </div>
+                        <div class="glass" style="padding: 1.2rem; text-align: center;">
+                            <div style="font-size: 2rem; font-weight: bold; color: #4ade80;" id="agent-stat-active">0</div>
+                            <div style="font-size: 0.8rem; color: #888; margin-top: 4px;">Active</div>
+                        </div>
+                        <div class="glass" style="padding: 1.2rem; text-align: center;">
+                            <div style="font-size: 2rem; font-weight: bold; color: #facc15;" id="agent-stat-idle">0</div>
+                            <div style="font-size: 0.8rem; color: #888; margin-top: 4px;">Idle</div>
+                        </div>
+                        <div class="glass" style="padding: 1.2rem; text-align: center;">
+                            <div style="font-size: 2rem; font-weight: bold; color: var(--trend-negative);" id="agent-stat-error">0</div>
+                            <div style="font-size: 0.8rem; color: #888; margin-top: 4px;">Error</div>
+                        </div>
+                    </div>
+                    <!-- Agent cards grid -->
+                    <div id="agent-fleet-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1.5rem;">
+                        <div style="text-align: center; padding: 60px; color: #888; grid-column: 1/-1;">
+                            <i class="fas fa-circle-notch fa-spin fa-2x"></i>
+                            <p style="margin-top: 12px;">Loading agent fleet...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: API Providers -->
+                <div class="agent-panel" id="atab-providers" style="display: none;">
+                    <!-- Auto-Discover Bar -->
+                    <div class="glass" style="padding: 1rem 1.5rem; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(102,252,241,.2);">
+                        <div>
+                            <span style="color: var(--text-heading); font-weight: 600;"><i class="fas fa-radar" style="color: var(--accent-color);"></i> Provider Discovery</span>
+                            <span style="color: #888; font-size: .82rem; margin-left: 10px;">Scans ~/.hermes/.env for configured API keys</span>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <span id="discover-status" style="font-size: .8rem; color: #888;"></span>
+                            <button class="btn-outline btn-sm" id="btn-discover-providers"><i class="fas fa-search"></i> Auto-Discover</button>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                        <!-- Provider Cards -->
+                        <div id="providers-config-list" style="display: flex; flex-direction: column; gap: 1rem;">
+                            <!-- populated by JS -->
+                        </div>
+                        <!-- Add Provider Form -->
+                        <div class="glass" style="padding: 2rem;">
+                            <h2 style="color: var(--accent-color); font-size: 1.1rem; margin-bottom: 1.5rem;"><i class="fas fa-plus-circle"></i> Add / Edit Provider</h2>
+                            <div style="display: flex; flex-direction: column; gap: 15px;">
+                                <div>
+                                    <label style="font-size: 0.85rem; color: var(--text-heading); display: block; margin-bottom: 6px;">Provider Name</label>
+                                    <select id="prov-name-sel" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 10px; border-radius: 8px; color: var(--text-main); font-family: inherit;">
+                                        <option value="openai">OpenAI</option>
+                                        <option value="anthropic">Anthropic</option>
+                                        <option value="gemini">Google Gemini</option>
+                                        <option value="groq">Groq</option>
+                                        <option value="ollama">Ollama (Local)</option>
+                                        <option value="openrouter">OpenRouter</option>
+                                        <option value="custom">Custom / Self-Hosted</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="font-size: 0.85rem; color: var(--text-heading); display: block; margin-bottom: 6px;">API Key</label>
+                                    <input type="password" id="prov-api-key" placeholder="sk-..." style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 10px; border-radius: 8px; color: var(--text-main); font-family: monospace; box-sizing: border-box;">
+                                </div>
+                                <div>
+                                    <label style="font-size: 0.85rem; color: var(--text-heading); display: block; margin-bottom: 6px;">Base URL (optional override)</label>
+                                    <input type="text" id="prov-base-url" placeholder="https://api.openai.com/v1" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 10px; border-radius: 8px; color: var(--text-main); font-family: inherit; box-sizing: border-box;">
+                                </div>
+                                <div>
+                                    <label style="font-size: 0.85rem; color: var(--text-heading); display: block; margin-bottom: 6px;">Default Model</label>
+                                    <input type="text" id="prov-model" placeholder="gpt-4o" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 10px; border-radius: 8px; color: var(--text-main); font-family: inherit; box-sizing: border-box;">
+                                </div>
+                                <div style="display: flex; gap: 10px;">
+                                    <button class="btn-outline" id="btn-test-provider" style="flex: 1;"><i class="fas fa-plug"></i> Test Connection</button>
+                                    <button class="btn-outline" id="btn-save-provider" style="flex: 1; background: var(--accent-color); color: #000; border: none; font-weight: bold;"><i class="fas fa-save"></i> Save</button>
+                                </div>
+                                <div id="provider-test-result" style="font-size: 0.85rem; padding: 8px; border-radius: 6px; display: none;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: Pipelines -->
+                <div class="agent-panel" id="atab-pipelines" style="display: none;">
+                    <div style="display: grid; grid-template-columns: 1fr 1.4fr; gap: 2rem;">
+                        <!-- Pipeline list -->
+                        <div>
+                            <div class="glass" style="padding: 1.5rem; margin-bottom: 1rem;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                                    <h2 style="color: var(--accent-color); font-size: 1.1rem;"><i class="fas fa-sitemap"></i> Pipelines</h2>
+                                    <button class="btn-outline btn-sm" id="btn-new-pipeline"><i class="fas fa-plus"></i> New</button>
+                                </div>
+                                <div id="pipeline-list" style="display: flex; flex-direction: column; gap: 10px;"></div>
+                            </div>
+                        </div>
+                        <!-- Pipeline Editor -->
+                        <div class="glass" style="padding: 2rem;">
+                            <h2 style="color: var(--accent-color); font-size: 1.1rem; margin-bottom: 1.5rem;"><i class="fas fa-code-branch"></i> Pipeline Editor</h2>
+                            <div id="pipeline-editor-content">
+                                <p style="color: #888; font-size: 0.9rem;">Select or create a pipeline to configure its steps.</p>
+                                <div style="margin-top: 1.5rem;">
+                                    <label style="font-size: 0.85rem; color: var(--text-heading); display: block; margin-bottom: 6px;">Pipeline Name</label>
+                                    <input type="text" id="pipeline-name" placeholder="My Research Pipeline" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 10px; border-radius: 8px; color: var(--text-main); font-family: inherit; box-sizing: border-box; margin-bottom: 12px;">
+                                    <label style="font-size: 0.85rem; color: var(--text-heading); display: block; margin-bottom: 6px;">System Prompt</label>
+                                    <textarea id="pipeline-system-prompt" rows="5" placeholder="You are a research agent that..." style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 10px; border-radius: 8px; color: var(--text-main); font-family: inherit; resize: vertical; box-sizing: border-box; margin-bottom: 12px;"></textarea>
+                                    <label style="font-size: 0.85rem; color: var(--text-heading); display: block; margin-bottom: 6px;">Steps (YAML-like)</label>
+                                    <textarea id="pipeline-steps" rows="6" placeholder="- step: search_web&#10;  input: {{user_query}}&#10;- step: summarize&#10;  model: gpt-4o" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); padding: 10px; border-radius: 8px; color: var(--accent-color); font-family: monospace; resize: vertical; box-sizing: border-box; font-size: 0.85rem;"></textarea>
+                                    <button class="btn-outline" id="btn-save-pipeline" style="margin-top: 12px; background: var(--accent-color); color: #000; border: none; font-weight: bold; width: 100%;"><i class="fas fa-save"></i> Save Pipeline</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: Monitor -->
+                <div class="agent-panel" id="atab-monitor" style="display: none;">
+                    <!-- System Telemetry Row -->
+                    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; margin-bottom: 2rem;" id="monitor-telemetry">
+                        <div class="glass" style="padding: 1.2rem; text-align: center;">
+                            <div style="font-size: 1.8rem; font-weight: bold; color: var(--accent-color);" id="mon-cpu">—</div>
+                            <div style="font-size: 0.78rem; color: #888; margin-top: 4px;"><i class="fas fa-microchip"></i> CPU Load</div>
+                        </div>
+                        <div class="glass" style="padding: 1.2rem; text-align: center;">
+                            <div style="font-size: 1.8rem; font-weight: bold; color: #a78bfa;" id="mon-mem">—</div>
+                            <div style="font-size: 0.78rem; color: #888; margin-top: 4px;"><i class="fas fa-memory"></i> Memory</div>
+                        </div>
+                        <div class="glass" style="padding: 1.2rem; text-align: center;">
+                            <div style="font-size: 1.8rem; font-weight: bold; color: #4ade80;" id="mon-disk">—</div>
+                            <div style="font-size: 0.78rem; color: #888; margin-top: 4px;"><i class="fas fa-hdd"></i> Disk Free</div>
+                        </div>
+                        <div class="glass" style="padding: 1.2rem; text-align: center;">
+                            <div style="font-size: 1.8rem; font-weight: bold; color: #facc15;" id="mon-models">—</div>
+                            <div style="font-size: 0.78rem; color: #888; margin-top: 4px;"><i class="fas fa-cube"></i> Local Models</div>
+                        </div>
+                        <div class="glass" style="padding: 1.2rem; text-align: center;">
+                            <div style="font-size: 1.8rem; font-weight: bold; color: #f87171;" id="mon-uptime">—</div>
+                            <div style="font-size: 0.78rem; color: #888; margin-top: 4px;"><i class="fas fa-clock"></i> Uptime</div>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem;">
+                        <div class="glass" style="padding: 2rem;">
+                            <h2 style="color: var(--accent-color); font-size: 1.1rem; margin-bottom: 1.5rem;"><i class="fas fa-heartbeat"></i> Agent Health</h2>
+                            <div id="agent-health-list" style="display: flex; flex-direction: column; gap: 10px;"></div>
+                        </div>
+                        <div class="glass" style="padding: 2rem;">
+                            <h2 style="color: var(--accent-color); font-size: 1.1rem; margin-bottom: 1.5rem;"><i class="fas fa-list-alt"></i> Live Event Stream</h2>
+                            <div id="agent-event-stream" style="height: 260px; overflow-y: auto; font-family: monospace; font-size: 0.78rem; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; display: flex; flex-direction: column; gap: 4px;"></div>
+                        </div>
+                    </div>
+                    <div class="glass" style="padding: 2rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                            <h2 style="color: var(--accent-color); font-size: 1.1rem; margin: 0;"><i class="fas fa-history"></i> Recent Session Activity</h2>
+                            <button class="btn-outline btn-sm" id="btn-refresh-sessions"><i class="fas fa-sync-alt"></i> Refresh</button>
+                        </div>
+                        <table class="data-table" id="agent-task-table">
+                            <thead><tr><th>Session</th><th>Source</th><th>Model</th><th>Messages</th><th>Tokens</th><th>Time</th></tr></thead>
+                            <tbody id="agent-task-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Tab: Templates -->
+                <div class="agent-panel" id="atab-templates" style="display: none;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.5rem;" id="agent-templates-grid"></div>
+                </div>
+
+                <!-- Tab: Resources -->
+                <div class="agent-panel" id="atab-resources" style="display: none;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                        <!-- Left: File Browser + Search -->
+                        <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                            <!-- Spotlight Search -->
+                            <div class="glass" style="padding: 1.5rem;">
+                                <h3 style="color: var(--accent-color); font-size: 1rem; margin: 0 0 12px 0;"><i class="fas fa-search"></i> Spotlight Search</h3>
+                                <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                                    <input type="text" id="local-search-input" placeholder="Search files, notes, documents…" style="flex:1;background:rgba(255,255,255,.05);border:1px solid var(--glass-border);padding:10px;border-radius:8px;color:var(--text-main);font-family:inherit;box-sizing:border-box;">
+                                    <select id="local-search-type" style="background:rgba(255,255,255,.05);border:1px solid var(--glass-border);padding:10px;border-radius:8px;color:var(--text-main);font-family:inherit;">
+                                        <option value="">All</option>
+                                        <option value="pdf">PDFs</option>
+                                        <option value="image">Images</option>
+                                        <option value="folder">Folders</option>
+                                        <option value="code">Code</option>
+                                    </select>
+                                    <button class="btn-outline btn-sm" id="btn-local-search"><i class="fas fa-bolt"></i> Search</button>
+                                </div>
+                                <div id="local-search-results" style="max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;"></div>
+                            </div>
+                            <!-- File Browser -->
+                            <div class="glass" style="padding: 1.5rem;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                    <h3 style="color: var(--accent-color); font-size: 1rem; margin: 0;"><i class="fas fa-folder-open"></i> File Browser</h3>
+                                    <div style="display: flex; gap: 6px;">
+                                        <button class="btn-outline btn-sm" onclick="scanLocalDir('Desktop')">Desktop</button>
+                                        <button class="btn-outline btn-sm" onclick="scanLocalDir('Downloads')">Downloads</button>
+                                        <button class="btn-outline btn-sm" onclick="scanLocalDir('Documents')">Documents</button>
+                                        <button class="btn-outline btn-sm" onclick="scanLocalDir('.hermes')">Hermes</button>
+                                    </div>
+                                </div>
+                                <div id="local-browser-path" style="font-size:.78rem;color:#888;margin-bottom:8px;"></div>
+                                <div id="local-browser-list" style="max-height: 350px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;"></div>
+                            </div>
+                        </div>
+                        <!-- Right: Shell + Scripts -->
+                        <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                            <!-- Shell Terminal -->
+                            <div class="glass" style="padding: 1.5rem;">
+                                <h3 style="color: var(--accent-color); font-size: 1rem; margin: 0 0 12px 0;"><i class="fas fa-terminal"></i> Shell (Safe Mode)</h3>
+                                <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                                    <input type="text" id="shell-input" placeholder="ls -la ~/Desktop" style="flex:1;background:rgba(0,0,0,.4);border:1px solid var(--glass-border);padding:10px;border-radius:8px;color:var(--accent-color);font-family:monospace;font-size:.85rem;box-sizing:border-box;">
+                                    <button class="btn-outline btn-sm" id="btn-shell-run"><i class="fas fa-play"></i> Run</button>
+                                </div>
+                                <div style="font-size:.7rem;color:#666;margin-bottom:8px;">Allowed: ls, cat, head, tail, find, grep, mdfind, ollama, node, python3, git, curl, brew, df, du, ps…</div>
+                                <div id="shell-output" style="background:rgba(0,0,0,.5);border:1px solid var(--glass-border);border-radius:8px;padding:12px;font-family:monospace;font-size:.78rem;color:#4ade80;max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;"></div>
+                            </div>
+                            <!-- Scripts Discovery -->
+                            <div class="glass" style="padding: 1.5rem;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                    <h3 style="color: var(--accent-color); font-size: 1rem; margin: 0;"><i class="fas fa-file-code"></i> Local Scripts</h3>
+                                    <button class="btn-outline btn-sm" id="btn-scan-scripts"><i class="fas fa-radar"></i> Scan</button>
+                                </div>
+                                <div id="local-scripts-list" style="max-height: 350px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Agent Config / Edit Modal -->
+            <div id="agent-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 3000; justify-content: center; align-items: center;">
+                <div class="glass" style="width: 700px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column; border-radius: 16px; overflow: hidden; border: 1px solid var(--accent-color);">
+                    <div style="padding: 20px 24px; border-bottom: 1px solid var(--glass-border); display: flex; justify-content: space-between; align-items: center; background: rgba(11,12,16,0.95);">
+                        <h3 id="agent-modal-title" style="color: var(--text-heading); margin: 0;">New Agent</h3>
+                        <button id="btn-close-agent-modal" style="background: none; border: none; color: var(--text-main); cursor: pointer; font-size: 1.4rem;"><i class="fas fa-times"></i></button>
+                    </div>
+                    <div style="flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+                        <input type="hidden" id="agent-edit-id">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                            <div>
+                                <label style="font-size: 0.85rem; color: var(--text-heading); display: block; margin-bottom: 6px;">Agent Name *</label>
+                                <input type="text" id="agent-name" placeholder="Research Assistant" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 10px; border-radius: 8px; color: var(--text-main); font-family: inherit; box-sizing: border-box;">
+                            </div>
+                            <div>
+                                <label style="font-size: 0.85rem; color: var(--text-heading); display: block; margin-bottom: 6px;">Provider</label>
+                                <select id="agent-provider" onchange="loadModelOptions()" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 10px; border-radius: 8px; color: var(--text-main); font-family: inherit;">
+                                    <option value="ollama">Ollama (Local)</option>
+                                    <option value="openrouter">OpenRouter</option>
+                                    <option value="openai">OpenAI</option>
+                                    <option value="anthropic">Anthropic</option>
+                                    <option value="gemini">Google Gemini</option>
+                                    <option value="groq">Groq</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                            <div>
+                                <label style="font-size: 0.85rem; color: var(--text-heading); display: block; margin-bottom: 6px;">Model <span id="model-load-spinner" style="display:none;color:#888;"><i class="fas fa-circle-notch fa-spin"></i></span></label>
+                                <select id="agent-model" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 10px; border-radius: 8px; color: var(--text-main); font-family: inherit;">
+                                    <option value="">Select provider first…</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size: 0.85rem; color: var(--text-heading); display: block; margin-bottom: 6px;">Role / Type</label>
+                                <select id="agent-role" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 10px; border-radius: 8px; color: var(--text-main); font-family: inherit;">
+                                    <option value="assistant">General Assistant</option>
+                                    <option value="researcher">Researcher</option>
+                                    <option value="coder">Code Generator</option>
+                                    <option value="reviewer">Code Reviewer</option>
+                                    <option value="orchestrator">Orchestrator</option>
+                                    <option value="critic">Critic / Evaluator</option>
+                                    <option value="custom">Custom</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size: 0.85rem; color: var(--text-heading); display: block; margin-bottom: 6px;">System Prompt</label>
+                            <textarea id="agent-system-prompt" rows="5" placeholder="You are a helpful assistant specialized in..." style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 10px; border-radius: 8px; color: var(--text-main); font-family: inherit; resize: vertical; box-sizing: border-box;"></textarea>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+                            <div>
+                                <label style="font-size: 0.85rem; color: var(--text-heading); display: block; margin-bottom: 6px;">Temperature</label>
+                                <input type="number" id="agent-temperature" value="0.7" min="0" max="2" step="0.1" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 10px; border-radius: 8px; color: var(--text-main); font-family: inherit; box-sizing: border-box;">
+                            </div>
+                            <div>
+                                <label style="font-size: 0.85rem; color: var(--text-heading); display: block; margin-bottom: 6px;">Max Tokens</label>
+                                <input type="number" id="agent-max-tokens" value="4096" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 10px; border-radius: 8px; color: var(--text-main); font-family: inherit; box-sizing: border-box;">
+                            </div>
+                            <div>
+                                <label style="font-size: 0.85rem; color: var(--text-heading); display: block; margin-bottom: 6px;">Max Retries</label>
+                                <input type="number" id="agent-max-retries" value="3" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 10px; border-radius: 8px; color: var(--text-main); font-family: inherit; box-sizing: border-box;">
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size: 0.85rem; color: var(--text-heading); display: block; margin-bottom: 8px;">Enabled Capabilities</label>
+                            <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;"><input type="checkbox" id="cap-web-search" style="accent-color: var(--accent-color);"> Web Search</label>
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;"><input type="checkbox" id="cap-code-exec" style="accent-color: var(--accent-color);"> Code Execution</label>
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;"><input type="checkbox" id="cap-file-read" checked style="accent-color: var(--accent-color);"> File Read</label>
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;"><input type="checkbox" id="cap-memory" checked style="accent-color: var(--accent-color);"> Memory</label>
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;"><input type="checkbox" id="cap-tools" checked style="accent-color: var(--accent-color);"> Tool Use</label>
+                            </div>
+                        </div>
+                        <!-- Chat Test Panel -->
+                        <div id="agent-chat-test" style="display:none;">
+                            <label style="font-size: 0.85rem; color: var(--text-heading); display: block; margin-bottom: 8px;"><i class="fas fa-comment-dots"></i> Test Chat (sends real request)</label>
+                            <div style="display:flex;gap:8px;">
+                                <input type="text" id="agent-test-msg" placeholder="Ask something to test this agent…" style="flex:1;background:rgba(255,255,255,0.05);border:1px solid var(--glass-border);padding:10px;border-radius:8px;color:var(--text-main);font-family:inherit;box-sizing:border-box;">
+                                <button id="btn-test-agent-chat" class="btn-outline" style="white-space:nowrap;"><i class="fas fa-paper-plane"></i> Send</button>
+                            </div>
+                            <div id="agent-test-result" style="display:none;margin-top:10px;padding:12px;background:rgba(0,0,0,0.3);border:1px solid var(--glass-border);border-radius:8px;font-size:0.85rem;color:var(--text-main);max-height:200px;overflow-y:auto;"></div>
+                        </div>
+                    </div>
+                    <div style="padding: 16px 24px; border-top: 1px solid var(--glass-border); display: flex; justify-content: flex-end; gap: 12px; background: rgba(11,12,16,0.95);">
+                        <button id="btn-delete-agent" class="btn-outline" style="border-color: var(--trend-negative); color: var(--trend-negative); margin-right: auto; display: none;"><i class="fas fa-trash"></i> Delete</button>
+                        <button id="btn-cancel-agent-modal" class="btn-outline">Cancel</button>
+                        <button id="btn-save-agent" class="btn-outline" style="background: var(--accent-color); color: #000; border: none; font-weight: bold;"><i class="fas fa-save"></i> Save Agent</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings View -->
+
+            <section class="dashboard-overview view-section" id="view-settings" style="display: none;">
+                <div class="welcome-text" style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h1>System Configuration</h1>
+                        <p>Manage Hermes Gateway engines, memory arrays, and all agent capabilities.</p>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <span id="settings-status" style="font-size: 0.85rem; color: #888;"></span>
+                        <button class="btn-outline" id="btn-save-settings" style="background: var(--accent-color); color: #000; border: none; font-weight: bold; padding: 10px 20px;"><i class="fas fa-save"></i> Apply Changes</button>
+                    </div>
+                </div>
+
+                <!-- Tab Nav -->
+                <div style="display: flex; gap: 5px; margin-bottom: 2rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 0;">
+                    <button class="settings-tab active" data-tab="engine" style="padding: 10px 20px; background: transparent; border: none; color: var(--accent-color); border-bottom: 2px solid var(--accent-color); font-family: inherit; font-size: 0.9rem; cursor: pointer; white-space: nowrap;"><i class="fas fa-microchip"></i> Engine</button>
+                    <button class="settings-tab" data-tab="memory" style="padding: 10px 20px; background: transparent; border: none; color: var(--text-main); border-bottom: 2px solid transparent; font-family: inherit; font-size: 0.9rem; cursor: pointer; white-space: nowrap;"><i class="fas fa-brain"></i> Memory</button>
+                    <button class="settings-tab" data-tab="skills" style="padding: 10px 20px; background: transparent; border: none; color: var(--text-main); border-bottom: 2px solid transparent; font-family: inherit; font-size: 0.9rem; cursor: pointer; white-space: nowrap;"><i class="fas fa-bolt"></i> Skills</button>
+                    <button class="settings-tab" data-tab="plugins" style="padding: 10px 20px; background: transparent; border: none; color: var(--text-main); border-bottom: 2px solid transparent; font-family: inherit; font-size: 0.9rem; cursor: pointer; white-space: nowrap;"><i class="fas fa-puzzle-piece"></i> Plugins</button>
+                    <button class="settings-tab" data-tab="tools" style="padding: 10px 20px; background: transparent; border: none; color: var(--text-main); border-bottom: 2px solid transparent; font-family: inherit; font-size: 0.9rem; cursor: pointer; white-space: nowrap;"><i class="fas fa-wrench"></i> Tools</button>
+                    <button class="settings-tab" data-tab="danger" style="padding: 10px 20px; background: transparent; border: none; color: var(--trend-negative); border-bottom: 2px solid transparent; font-family: inherit; font-size: 0.9rem; cursor: pointer; white-space: nowrap;"><i class="fas fa-skull-crossbones"></i> Danger Zone</button>
+                </div>
+
+                <!-- Tab: Engine -->
+                <div class="settings-panel" id="tab-engine">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                        <div class="glass" style="padding: 2rem;">
+                            <h2 style="color: var(--accent-color); margin-bottom: 1.5rem; font-size: 1.1rem;"><i class="fas fa-robot"></i> LLM Provider</h2>
+                            <div style="margin-bottom: 1.5rem;">
+                                <label style="color: var(--text-heading); font-size: 0.85rem; display: block; margin-bottom: 8px;">Primary Provider</label>
+                                <select id="sel-llm-provider" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 10px; border-radius: 8px; color: var(--text-main); font-family: inherit; font-size: 0.95rem;">
+                                    <option value="local">🦙 Local LLaMA-3 (Ollama)</option>
+                                    <option value="openai">⚡ OpenAI (GPT-4o)</option>
+                                    <option value="anthropic">🧠 Anthropic (Claude 3.5 Sonnet)</option>
+                                    <option value="gemini">✨ Google (Gemini 1.5 Pro)</option>
+                                    <option value="groq">🔥 Groq (Llama3-70b Ultra Fast)</option>
+                                </select>
+                            </div>
+                            <div style="margin-bottom: 1.5rem;">
+                                <label style="color: var(--text-heading); font-size: 0.85rem; display: block; margin-bottom: 8px;">Fallback Provider</label>
+                                <select id="sel-llm-fallback" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 10px; border-radius: 8px; color: var(--text-main); font-family: inherit; font-size: 0.95rem;">
+                                    <option value="none">None</option>
+                                    <option value="local" selected>🦙 Local LLaMA-3 (Ollama)</option>
+                                    <option value="groq">🔥 Groq</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="color: var(--text-heading); font-size: 0.85rem; display: block; margin-bottom: 8px;">API Key</label>
+                                <div style="display: flex; gap: 10px;">
+                                    <input type="password" id="input-api-key" value="••••••••xxxx" disabled style="flex: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 10px; border-radius: 8px; color: var(--text-main); font-family: monospace;">
+                                    <button class="btn-outline btn-sm" id="btn-edit-api" style="padding: 0 15px;">Edit</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="glass" style="padding: 2rem;">
+                            <h2 style="color: var(--accent-color); margin-bottom: 1.5rem; font-size: 1.1rem;"><i class="fas fa-sliders-h"></i> Model Parameters</h2>
+                            <div style="margin-bottom: 1.5rem;">
+                                <label style="color: var(--text-heading); font-size: 0.85rem; display: block; margin-bottom: 8px;">Temperature: <span id="val-temperature">0.7</span></label>
+                                <input type="range" id="range-temperature" min="0" max="1" step="0.1" value="0.7" style="width: 100%; accent-color: var(--accent-color);">
+                                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #666; margin-top: 4px;"><span>Precise</span><span>Creative</span></div>
+                            </div>
+                            <div style="margin-bottom: 1.5rem;">
+                                <label style="color: var(--text-heading); font-size: 0.85rem; display: block; margin-bottom: 8px;">Max Output Tokens: <span id="val-max-tokens">4096</span></label>
+                                <input type="range" id="range-max-tokens" min="512" max="16384" step="512" value="4096" style="width: 100%; accent-color: var(--accent-color);">
+                            </div>
+                            <div>
+                                <label style="color: var(--text-heading); font-size: 0.85rem; display: block; margin-bottom: 8px;">Dashboard Theme</label>
+                                <div style="display: flex; gap: 10px;">
+                                    <button class="btn-outline" id="btn-theme-dark" style="background: var(--accent-color); color: #000; flex: 1;">🌙 Neon Dark</button>
+                                    <button class="btn-outline" id="btn-theme-light" style="flex: 1;">☀️ Light Mode</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: Memory -->
+                <div class="settings-panel" id="tab-memory" style="display: none;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                        <div class="glass" style="padding: 2rem;">
+                            <h2 style="color: var(--accent-color); margin-bottom: 1.5rem; font-size: 1.1rem;"><i class="fas fa-database"></i> Context Window</h2>
+                            <div style="margin-bottom: 1.5rem;">
+                                <label style="color: var(--text-heading); font-size: 0.85rem; display: block; margin-bottom: 8px;">Retention Window: <span id="val-memory-retention">50 messages</span></label>
+                                <input type="range" id="range-memory-retention" min="10" max="200" value="50" style="width: 100%; accent-color: var(--accent-color);">
+                            </div>
+                            <div style="margin-bottom: 1.5rem;">
+                                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-bottom: 12px;">
+                                    <input type="checkbox" id="chk-auto-summarize" checked style="accent-color: var(--accent-color); width: 18px; height: 18px;">
+                                    <span>Enable Vector Auto-Summarization</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-bottom: 12px;">
+                                    <input type="checkbox" id="chk-persist-memory" checked style="accent-color: var(--accent-color); width: 18px; height: 18px;">
+                                    <span>Persist Memory Between Restarts</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                                    <input type="checkbox" id="chk-reasoning-trace" checked style="accent-color: var(--accent-color); width: 18px; height: 18px;">
+                                    <span>Show Reasoning Chain-of-Thought</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="glass" style="padding: 2rem;">
+                            <h2 style="color: var(--accent-color); margin-bottom: 1.5rem; font-size: 1.1rem;"><i class="fas fa-chart-pie"></i> Live Memory Stats</h2>
+                            <div id="memory-stats-panel" style="display: flex; flex-direction: column; gap: 12px;">
+                                <div style="display: flex; justify-content: space-between; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                                    <span style="color: #888;">Active Sessions in Memory</span>
+                                    <span id="mem-stat-sessions" style="color: var(--accent-color); font-weight: bold;">—</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                                    <span style="color: #888;">Chat Context Length</span>
+                                    <span id="mem-stat-ctx" style="color: var(--accent-color); font-weight: bold;">—</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                                    <span style="color: #888;">Total Tokens Processed</span>
+                                    <span id="mem-stat-tokens" style="color: var(--accent-color); font-weight: bold;">—</span>
+                                </div>
+                                <button class="btn-outline" id="btn-clear-cache" style="border-color: var(--trend-negative); color: var(--trend-negative); margin-top: 10px;"><i class="fas fa-trash"></i> Purge Active Memory Caches</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: Skills -->
+                <div class="settings-panel" id="tab-skills" style="display: none;">
+                    <div class="glass" style="padding: 2rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                            <h2 style="color: var(--accent-color); font-size: 1.1rem;"><i class="fas fa-bolt"></i> Skills Registry</h2>
+                            <div style="display: flex; gap: 10px;">
+                                <input type="text" id="search-skills" placeholder="Filter skills..." style="background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 8px; color: var(--text-main); font-family: inherit;">
+                                <button class="btn-outline btn-sm" id="btn-reload-skills"><i class="fas fa-sync"></i> Reload</button>
+                            </div>
+                        </div>
+                        <div id="skills-module-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px;">
+                            <div style="text-align: center; padding: 40px; color: #888;"><i class="fas fa-circle-notch fa-spin fa-2x"></i><p style="margin-top: 10px;">Loading skills...</p></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: Plugins -->
+                <div class="settings-panel" id="tab-plugins" style="display: none;">
+                    <div class="glass" style="padding: 2rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                            <h2 style="color: var(--accent-color); font-size: 1.1rem;"><i class="fas fa-puzzle-piece"></i> Plugin Registry</h2>
+                            <button class="btn-outline btn-sm" id="btn-reload-plugins"><i class="fas fa-sync"></i> Reload</button>
+                        </div>
+                        <div id="plugins-module-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px;">
+                            <div style="text-align: center; padding: 40px; color: #888;"><i class="fas fa-circle-notch fa-spin fa-2x"></i></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: Tools -->
+                <div class="settings-panel" id="tab-tools" style="display: none;">
+                    <div class="glass" style="padding: 2rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                            <h2 style="color: var(--accent-color); font-size: 1.1rem;"><i class="fas fa-wrench"></i> Tool Registry</h2>
+                            <button class="btn-outline btn-sm" id="btn-reload-tools"><i class="fas fa-sync"></i> Reload</button>
+                        </div>
+                        <div id="tools-module-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px;">
+                            <div style="text-align: center; padding: 40px; color: #888;"><i class="fas fa-circle-notch fa-spin fa-2x"></i></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: Danger Zone -->
+                <div class="settings-panel" id="tab-danger" style="display: none;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                        <div class="glass" style="padding: 2rem; border: 1px solid rgba(255, 85, 85, 0.3);">
+                            <h2 style="color: var(--trend-negative); margin-bottom: 1.5rem; font-size: 1.1rem;"><i class="fas fa-radiation"></i> Destructive Operations</h2>
+                            <div style="display: flex; flex-direction: column; gap: 15px;">
+                                <div style="padding: 15px; background: rgba(255,85,85,0.05); border-radius: 8px; border: 1px solid rgba(255,85,85,0.2);">
+                                    <h4 style="color: var(--trend-negative); margin-bottom: 5px;">Purge All Session History</h4>
+                                    <p style="font-size: 0.8rem; color: #888; margin-bottom: 10px;">Permanently deletes all sessions and associated message logs from the database.</p>
+                                    <button class="btn-outline btn-sm" id="btn-purge-sessions" style="border-color: var(--trend-negative); color: var(--trend-negative);"><i class="fas fa-database"></i> Purge Sessions</button>
+                                </div>
+                                <div style="padding: 15px; background: rgba(255,85,85,0.05); border-radius: 8px; border: 1px solid rgba(255,85,85,0.2);">
+                                    <h4 style="color: var(--trend-negative); margin-bottom: 5px;">Reset Gateway Configuration</h4>
+                                    <p style="font-size: 0.8rem; color: #888; margin-bottom: 10px;">Wipes the dashboard_config.json and reverts all settings to factory defaults.</p>
+                                    <button class="btn-outline btn-sm" id="btn-reset-config" style="border-color: var(--trend-negative); color: var(--trend-negative);"><i class="fas fa-undo"></i> Reset to Defaults</button>
+                                </div>
+                                <div style="padding: 15px; background: rgba(255,85,85,0.05); border-radius: 8px; border: 1px solid rgba(255,85,85,0.2);">
+                                    <h4 style="color: var(--trend-negative); margin-bottom: 5px;">Clear Active Memory Caches</h4>
+                                    <p style="font-size: 0.8rem; color: #888; margin-bottom: 10px;">Purges the in-process chatMemory and all live context vectors immediately.</p>
+                                    <button class="btn-outline btn-sm" id="btn-clear-cache" style="border-color: var(--trend-negative); color: var(--trend-negative);"><i class="fas fa-brain"></i> Purge Memory</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="glass" style="padding: 2rem;">
+                            <h2 style="color: var(--accent-color); margin-bottom: 1.5rem; font-size: 1.1rem;"><i class="fas fa-terminal"></i> Gateway Control</h2>
+                            <div style="display: flex; flex-direction: column; gap: 15px;">
+                                <div style="padding: 15px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                                    <h4 style="margin-bottom: 5px;">Restart Gateway Process</h4>
+                                    <p style="font-size: 0.8rem; color: #888; margin-bottom: 10px;">Sends a SIGTERM to the gateway and re-spawns via start.js. Connections will drop briefly.</p>
+                                    <button class="btn-outline btn-sm" id="btn-restart-gateway-settings"><i class="fas fa-redo"></i> Restart Gateway</button>
+                                </div>
+                                <div style="padding: 15px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                                    <h4 style="margin-bottom: 5px;">Clear Gateway Logs</h4>
+                                    <p style="font-size: 0.8rem; color: #888; margin-bottom: 10px;">Truncates gateway.log on disk. Live stream will reset immediately.</p>
+                                    <button class="btn-outline btn-sm" id="btn-clear-logs-settings"><i class="fas fa-file-alt"></i> Clear Logs</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </section>
+
+            <!-- Module Content Viewer Modal -->
+            <div id="module-viewer-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 2000; justify-content: center; align-items: center;">
+                <div class="glass" style="width: 860px; max-width: 92vw; height: 80vh; display: flex; flex-direction: column; border-radius: 16px; overflow: hidden; border: 1px solid var(--accent-color);">
+                    <div style="padding: 18px 24px; border-bottom: 1px solid var(--glass-border); display: flex; justify-content: space-between; align-items: center; background: rgba(11,12,16,0.95);">
+                        <div>
+                            <h3 id="module-viewer-title" style="color: var(--text-heading); margin: 0; font-size: 1rem;"></h3>
+                            <span id="module-viewer-file" style="font-size: 0.75rem; color: #888;"></span>
+                        </div>
+                        <button id="btn-close-module-viewer" style="background: none; border: none; color: var(--text-main); cursor: pointer; font-size: 1.4rem;"><i class="fas fa-times"></i></button>
+                    </div>
+                    <div id="module-viewer-content" style="flex: 1; padding: 24px; overflow-y: auto; font-family: monospace; font-size: 0.85rem; white-space: pre-wrap; line-height: 1.6; background: var(--bg-color);"></div>
+                </div>
+            </div>
+
+            <!-- Chat View -->
+            <section class="dashboard-overview view-section" id="view-chat" style="display: none; height: 100%; flex-direction: column;">
+                <div class="welcome-text">
+                    <h1>Hermes Terminal Chat</h1>
+                    <p>Communicate with the agent and execute skills directly.</p>
+                </div>
+                
+                <div class="chat-container glass" style="flex: 1; display: flex; flex-direction: column; margin-top: 1rem; border-radius: 16px; overflow: hidden;">
+                    <div id="chat-messages" style="flex: 1; padding: 2rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1.5rem;">
+                        <div class="message ai-message" style="align-self: flex-start; max-width: 80%;">
+                            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px; color: var(--accent-color);">
+                                <i class="fas fa-robot"></i> <strong>Hermes</strong>
+                            </div>
+                            <div style="background: rgba(102, 252, 241, 0.1); padding: 1rem; border-radius: 0 16px 16px 16px; border: 1px solid var(--glass-border);">
+                                Greetings, Adrian. I am online and connected to the gateway. How can I assist you today?
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="chat-input-area" style="padding: 1.5rem; border-top: 1px solid var(--glass-border); background: rgba(0,0,0,0.2); display: flex; flex-direction: column; gap: 10px;">
+                        <div id="chat-suggestions" style="display: flex; gap: 10px; overflow-x: auto; padding-bottom: 5px; scrollbar-width: none;">
+                            <!-- Populated dynamically via JS -->
+                        </div>
+                        <form id="chat-form" style="display: flex; gap: 1rem;">
+                            <input type="text" id="chat-input" placeholder="Message Hermes or trigger a skill..." style="flex: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 12px 20px; border-radius: 24px; color: #fff; outline: none; font-family: inherit;">
+                            <button type="submit" class="btn-outline" style="border-radius: 24px; padding: 0 24px; background: var(--accent-color); color: #000; border: none; font-weight: bold;"><i class="fas fa-paper-plane"></i> Send</button>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Session Details Modal -->
+    <div id="session-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-index: 1000; justify-content: center; align-items: center;">
+        <div class="glass" style="width: 800px; max-width: 90vw; height: 600px; max-height: 90vh; display: flex; flex-direction: column; border-radius: 16px; overflow: hidden; position: relative; border: 1px solid var(--accent-color);">
+            <div style="padding: 20px; border-bottom: 1px solid var(--glass-border); display: flex; justify-content: space-between; align-items: center; background: rgba(11, 12, 16, 0.9);">
+                <h2 id="modal-session-title" style="color: var(--text-heading); font-size: 1.2rem;">Session Details</h2>
+                <button id="btn-close-modal" class="btn-outline btn-sm" style="border: none;"><i class="fas fa-times" style="font-size: 1.5rem;"></i></button>
+            </div>
+            <div id="modal-session-content" style="flex: 1; padding: 20px; overflow-y: auto; background: var(--bg-color);">
+                <div style="text-align: center; color: var(--text-main); margin-top: 50px;">
+                    <i class="fas fa-circle-notch fa-spin fa-2x"></i>
+                    <p style="margin-top: 10px;">Loading memory logs...</p>
+                </div>
+            </div>
+            <div style="padding: 15px; border-top: 1px solid var(--glass-border); display: flex; justify-content: flex-end; gap: 15px; background: rgba(11, 12, 16, 0.9);">
+                <button id="btn-modal-delete" class="btn-outline" style="border-color: var(--trend-negative); color: var(--trend-negative);"><i class="fas fa-trash"></i> Delete Memory</button>
+                <button id="btn-modal-resume" class="btn-outline" style="background: var(--accent-color); color: #000;"><i class="fas fa-play"></i> Resume Session</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script src="agents.js"></script>
+    <script type="module">
+        import { init3DScene } from './3d-scene.js';
+        document.addEventListener('DOMContentLoaded', () => {
+            init3DScene('three-container');
+        });
+        
+        // Modal Logic
+        document.getElementById('btn-close-modal').addEventListener('click', () => {
+            document.getElementById('session-modal').style.display = 'none';
+        });
+    </script>
+</body>
+</html>

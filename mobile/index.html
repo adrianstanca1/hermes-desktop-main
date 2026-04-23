@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Hermes - Mobile</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+    <div class="mobile-container">
+        
+        <!-- Top Header -->
+        <header class="app-header glass">
+            <div class="header-left">
+                <img src="../assets/dashboard_logo.png" alt="Logo" class="app-logo">
+                <h1>Hermes</h1>
+            </div>
+            <div class="header-right">
+                <img src="../assets/user_avatar.png" alt="Profile" class="profile-pic">
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="content-area">
+            <!-- HOME VIEW -->
+            <section class="view-section active-view" id="view-home">
+                <div class="greeting">
+                    <h2>Hello, Adrian</h2>
+                    <p>System is online & healthy</p>
+                </div>
+
+                <!-- Stats Carousel -->
+                <div class="stats-carousel">
+                    <div class="stat-card active-card glass">
+                        <i class="fas fa-server icon"></i>
+                        <div class="stat-info">
+                            <h3 id="val-sessions">...</h3>
+                            <p>Sessions</p>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <i class="fas fa-microchip icon"></i>
+                        <div class="stat-info">
+                            <h3 id="val-tokens">...</h3>
+                            <p>Tokens</p>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <i class="fas fa-clock icon"></i>
+                        <div class="stat-info">
+                            <h3 id="val-cron">...</h3>
+                            <p>Cron Jobs</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Activity -->
+                <section class="recent-activity">
+                    <div class="section-header">
+                        <h3>Recent Activity</h3>
+                        <a href="#" class="view-all" onclick="document.querySelector('[data-view=\'sessions\']').click()">View All</a>
+                    </div>
+                    <div class="activity-list" id="home-activity-list">
+                        <div class="loader">Loading...</div>
+                    </div>
+                </section>
+
+                <!-- Quick Actions -->
+                <section class="quick-actions">
+                    <h3>Quick Actions</h3>
+                    <div class="actions-grid">
+                        <button class="action-btn glass" id="btn-new-session"><i class="fas fa-plus"></i> New Session</button>
+                        <button class="action-btn glass" id="btn-view-logs"><i class="fas fa-list-alt"></i> View Logs</button>
+                    </div>
+                </section>
+            </section>
+
+            <!-- SESSIONS VIEW -->
+            <section class="view-section" id="view-sessions" style="display: none;">
+                <div class="greeting">
+                    <h2>All Sessions</h2>
+                </div>
+                <div class="activity-list" id="all-sessions-list">
+                    <div class="loader">Loading...</div>
+                </div>
+            </section>
+
+            <!-- LOGS VIEW -->
+            <section class="view-section" id="view-logs" style="display: none; height: 100%;">
+                <div class="greeting">
+                    <h2>Live Logs</h2>
+                </div>
+                <div class="terminal-container" id="mobile-terminal-output" style="background: #000; color: #0f0; padding: 15px; font-family: monospace; font-size: 0.8rem; border-radius: 12px; height: calc(100vh - 250px); overflow-y: auto;">
+                    <!-- Logs stream here -->
+                </div>
+            </section>
+
+            <!-- SETTINGS VIEW -->
+            <section class="view-section" id="view-settings" style="display: none;">
+                <div class="greeting">
+                    <h2>Settings</h2>
+                </div>
+                <div class="settings-list glass">
+                    <div class="settings-item"><i class="fas fa-user"></i> Account Profile</div>
+                    <div class="settings-item"><i class="fas fa-bell"></i> Notifications</div>
+                    <div class="settings-item"><i class="fas fa-shield-alt"></i> Security</div>
+                    <div class="settings-item" style="color: var(--trend-negative);"><i class="fas fa-sign-out-alt"></i> Logout</div>
+                </div>
+            </section>
+
+            <!-- CHAT VIEW -->
+            <section class="view-section" id="view-chat" style="display: none; height: 100%; display: flex; flex-direction: column;">
+                <div class="greeting" style="margin-bottom: 0;">
+                    <h2>Active Chat</h2>
+                </div>
+                <div id="mobile-chat-messages" style="flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 15px; height: calc(100vh - 280px);">
+                    <div class="message ai-message" style="align-self: flex-start; max-width: 85%;">
+                        <div style="background: rgba(102, 252, 241, 0.1); padding: 15px; border-radius: 0 16px 16px 16px; border: 1px solid var(--glass-border); font-size: 0.9rem;">
+                            Hello! I am connected to the mobile dashboard. How can I help you?
+                        </div>
+                    </div>
+                <div id="mobile-chat-suggestions" style="display: flex; gap: 10px; overflow-x: auto; padding: 10px; padding-bottom: 0; scrollbar-width: none;">
+                    <!-- Populated via JS -->
+                </div>
+                <div style="padding: 10px; border-top: 1px solid var(--glass-border);">
+                    <form id="mobile-chat-form" style="display: flex; gap: 10px;">
+                        <input type="text" id="mobile-chat-input" placeholder="Message Hermes..." style="flex: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 12px; border-radius: 20px; color: #fff; font-family: inherit; font-size: 0.9rem; outline: none;">
+                        <button type="submit" class="btn-outline" style="border-radius: 20px; background: var(--accent-color); color: #000; border: none; padding: 0 15px;"><i class="fas fa-paper-plane"></i></button>
+                    </form>
+                </div>
+            </section>
+
+        </main>
+
+        <!-- Bottom Navigation -->
+        <nav class="bottom-nav glass">
+            <a href="#" class="nav-btn active" data-view="home">
+                <i class="fas fa-home"></i>
+                <span>Home</span>
+            </a>
+            <a href="#" class="nav-btn" data-view="sessions">
+                <i class="fas fa-bolt"></i>
+                <span>Sessions</span>
+            </a>
+            <div class="fab-container">
+                <button class="fab" onclick="document.querySelector('[data-view=\'chat\']').click()">
+                    <i class="fas fa-microphone"></i>
+                </button>
+            </div>
+            <a href="#" class="nav-btn" data-view="logs">
+                <i class="fas fa-chart-bar"></i>
+                <span>Logs</span>
+            </a>
+            <a href="#" class="nav-btn" data-view="settings">
+                <i class="fas fa-user"></i>
+                <span>Profile</span>
+            </a>
+            <!-- Hidden Nav Item to hook into chat view system safely -->
+            <a href="#" class="nav-btn" data-view="chat" style="display: none;"></a>
+        </nav>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
