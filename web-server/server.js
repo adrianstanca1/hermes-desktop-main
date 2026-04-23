@@ -1110,28 +1110,7 @@ app.post('/api/settings/api-key', (req, res) => {
 function listModulesWithMeta(dir, type) {
     try {
         if (!fs.existsSync(dir)) {
-            // Return mock data for demo
-            const mocks = {
-                skills: [
-                    { name: 'git-workflow', description: 'Git branching, commit, and PR automation', enabled: true, type: 'skill', hasReadme: false },
-                    { name: 'bash-scripting', description: 'Defensive bash patterns with error handling', enabled: true, type: 'skill', hasReadme: false },
-                    { name: 'database-design', description: 'Schema design, indexing, and ORM selection', enabled: false, type: 'skill', hasReadme: false },
-                    { name: 'react-patterns', description: 'Modern React hooks, composition and performance', enabled: true, type: 'skill', hasReadme: false },
-                    { name: 'security-auditor', description: 'DevSecOps, vulnerability scanning and compliance', enabled: true, type: 'skill', hasReadme: false },
-                    { name: 'python-pro', description: 'Python 3.11+ patterns, async, and packaging', enabled: false, type: 'skill', hasReadme: false },
-                ],
-                plugins: [
-                    { name: 'openai-connector', description: 'GPT-4o and Embeddings API bridge', enabled: true, type: 'plugin', hasReadme: false },
-                    { name: 'webhook-handler', description: 'Inbound HTTP event processing pipeline', enabled: true, type: 'plugin', hasReadme: false },
-                    { name: 'slack-notifier', description: 'Push agent events to Slack channels', enabled: false, type: 'plugin', hasReadme: false },
-                ],
-                tools: [
-                    { name: 'file-reader', description: 'Safe filesystem read with sandboxing', enabled: true, type: 'tool', hasReadme: false },
-                    { name: 'shell-executor', description: 'Sandboxed bash command execution', enabled: false, type: 'tool', hasReadme: false },
-                    { name: 'web-fetcher', description: 'HTTP GET/POST with rate limiting', enabled: true, type: 'tool', hasReadme: false },
-                ]
-            };
-            return mocks[type] || [];
+            return [];
         }
         const config = readConfig();
         const disabled = config.disabled_modules || [];
@@ -1217,8 +1196,31 @@ app.post('/api/gateway/clear-logs', (req, res) => {
 
 app.post('/api/cron-jobs/:id/run', (req, res) => {
     const jobId = req.params.id;
-    // Mock the triggering of the cron job
-    res.json({ success: true, message: `Job ${jobId} triggered successfully` });
+    const cronPaths = [
+        path.join(HERMES_DIR, 'cron', jobId),
+        path.join(HERMES_DIR, 'cronjobs', jobId)
+    ];
+    let jobData = null;
+    let jobPath = null;
+    for (const p of cronPaths) {
+        if (fs.existsSync(p)) {
+            try {
+                jobData = JSON.parse(fs.readFileSync(p, 'utf8'));
+                jobPath = p;
+                break;
+            } catch (e) {}
+        }
+    }
+    
+    if (!jobData || !jobData.command) {
+        return res.status(404).json({ error: `Job ${jobId} not found or has no command.` });
+    }
+
+    // Execute the command in the background
+    const proc = spawn('sh', ['-c', jobData.command], { detached: true, stdio: 'ignore', cwd: os.homedir(), env: { ...process.env, HOME: os.homedir() } });
+    proc.unref();
+
+    res.json({ success: true, message: `Job ${jobId} triggered (running in background)` });
 });
 
 app.post('/api/gateway/platform/:name/reconnect', (req, res) => {
@@ -1251,39 +1253,95 @@ app.post('/api/chat', express.json(), (req, res) => {
     // Store user message in memory
     chatMemory.push({ role: 'user', content: userMsg });
 
-    // Simulated Reasoning Engine
-    const reasoningSteps = [
-        "Analyzing intent and retrieving relevant memory...",
-        `Cross-referencing available skills for task: "${userMsg.substring(0, 20)}..."`,
-        "Formulating execution plan...",
-        "Executing internal module...",
-        "Synthesizing final response..."
-    ];
+    // Ensure memory doesn't grow unbounded
+    const config = readConfig();
+    const limit = config.memory_retention || 50;
+    while (chatMemory.length > limit) chatMemory.shift();
 
-    let stepIndex = 0;
-    const reasoningInterval = setInterval(() => {
-        if (stepIndex < reasoningSteps.length) {
-            // Emit real-time reasoning via WebSocket
-            io.emit('reasoning_step', { step: reasoningSteps[stepIndex], index: stepIndex + 1, total: reasoningSteps.length });
-            stepIndex++;
-        } else {
-            clearInterval(reasoningInterval);
-            
-            // Generate contextual response based on memory
-            const contextLevel = chatMemory.length > 2 ? `Based on our previous interactions, ` : ``;
-            const finalResponse = `${contextLevel}I have processed your request: **"${userMsg}"**. \n\nI executed the necessary internal routines and verified the system state. All operations completed successfully. How else can I assist?`;
-            
-            // Store AI response in memory
-            chatMemory.push({ role: 'assistant', content: finalResponse });
-
-            res.json({
-                response: finalResponse,
-                tools: ['memory_retrieval', 'reasoning_engine', 'local_execution'],
-                timestamp: new Date().toISOString()
+    const env = loadHermesEnv();
+    io.emit('reasoning_step', { step: "Connecting to provider...", index: 1, total: 3 });
+    
+    // Check local ollama first if configured, else try openrouter
+    if (config.llm_provider === 'ollama') {
+        const http = require('http');
+        io.emit('reasoning_step', { step: "Sending request to local Ollama...", index: 2, total: 3 });
+        const payload = JSON.stringify({ 
+            model: "llama3", // default local
+            messages: chatMemory,
+            stream: false
+        });
+        const chatReq = http.request({ 
+            hostname: 'localhost', port: 11434, path: '/api/chat', method: 'POST', timeout: 60000, 
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } 
+        }, (chatRes) => {
+            let data = '';
+            chatRes.on('data', chunk => data += chunk);
+            chatRes.on('end', () => {
+                try {
+                    io.emit('reasoning_step', { step: "Processing response...", index: 3, total: 3 });
+                    const parsed = JSON.parse(data);
+                    const reply = parsed.message?.content || 'No response from Ollama';
+                    chatMemory.push({ role: 'assistant', content: reply });
+                    res.json({ response: reply, timestamp: new Date().toISOString() });
+                    io.emit('reasoning_complete');
+                } catch(e) { 
+                    res.status(500).json({ error: 'Failed to parse Ollama response' });
+                }
             });
-            io.emit('reasoning_complete');
-        }
-    }, 800); // 800ms per reasoning step
+        });
+        chatReq.on('error', (err) => res.status(502).json({ error: err.message }));
+        chatReq.write(payload);
+        chatReq.end();
+        return;
+    }
+    
+    if (config.llm_provider === 'openrouter' && env.OPENROUTER_API_KEY) {
+        const https = require('https');
+        io.emit('reasoning_step', { step: "Sending request to OpenRouter...", index: 2, total: 3 });
+        const payload = JSON.stringify({ 
+            model: "openai/gpt-3.5-turbo", // default
+            messages: chatMemory
+        });
+        const chatReq = https.request({ 
+            hostname: 'openrouter.ai', 
+            path: '/api/v1/chat/completions', 
+            method: 'POST', 
+            timeout: 30000, 
+            headers: { 
+                'Content-Type': 'application/json', 
+                'Authorization': 'Bearer ' + env.OPENROUTER_API_KEY 
+            } 
+        }, (chatRes) => {
+            let data = '';
+            chatRes.on('data', chunk => data += chunk);
+            chatRes.on('end', () => {
+                try {
+                    io.emit('reasoning_step', { step: "Processing response...", index: 3, total: 3 });
+                    const parsed = JSON.parse(data);
+                    const reply = parsed.choices?.[0]?.message?.content || 'No response from API';
+                    chatMemory.push({ role: 'assistant', content: reply });
+                    res.json({ response: reply, timestamp: new Date().toISOString() });
+                    io.emit('reasoning_complete');
+                } catch(e) { 
+                    res.status(500).json({ error: 'Failed to parse API response' });
+                }
+            });
+        });
+        chatReq.on('error', (err) => res.status(502).json({ error: err.message }));
+        chatReq.write(payload);
+        chatReq.end();
+        return;
+    }
+
+    // Fallback if no valid configuration
+    const finalResponse = `Received message: "${userMsg}". No valid LLM provider configured. Please configure OpenRouter or Ollama in settings to enable actual chat.`;
+    chatMemory.push({ role: 'assistant', content: finalResponse });
+    io.emit('reasoning_step', { step: "Error: No provider configured", index: 3, total: 3 });
+    res.json({
+        response: finalResponse,
+        timestamp: new Date().toISOString()
+    });
+    io.emit('reasoning_complete');
 });
 
 io.on('connection', (socket) => {
