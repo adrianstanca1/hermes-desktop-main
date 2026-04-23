@@ -34,13 +34,13 @@ const GATEWAY_LOG = path.join(HERMES_DIR, 'gateway.log');
 
 let db;
 const DB_EXISTS = fs.existsSync(DB_PATH);
-if (DB_EXISTS) {
-    db = new sqlite3.Database(DB_PATH, sqlite3.OPEN_READONLY, (err) => {
-        if (err) console.error('Error opening database', err.message);
-    });
-} else {
-    console.log('No state.db found, operating in mock stats mode.');
-}
+db = new sqlite3.Database(DB_PATH, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE, (err) => {
+    if (err) console.error('Error opening database', err.message);
+    else {
+        db.run(`CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, started_at INTEGER, model TEXT, message_count INTEGER)`);
+        db.run(`CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER, role TEXT, content TEXT, timestamp INTEGER)`);
+    }
+});
 
 // Watch gateway states and broadcast
 function watchFile(filePath, eventName) {
@@ -1166,6 +1166,17 @@ app.post('/api/settings/purge-memory', (req, res) => {
     chatMemory.length = 0;
     io.emit('memory_purged', { timestamp: new Date().toISOString() });
     res.json({ success: true, message: 'All active memory caches purged' });
+});
+
+app.post('/api/settings/purge-sessions', (req, res) => {
+    if (!DB_EXISTS) return res.status(404).json({ error: 'No database available' });
+    db.run(`DELETE FROM messages`, (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        db.run(`DELETE FROM sessions`, (err2) => {
+            if (err2) return res.status(500).json({ error: err2.message });
+            res.json({ success: true, message: 'All sessions purged from database' });
+        });
+    });
 });
 
 app.post('/api/gateway/restart', (req, res) => {

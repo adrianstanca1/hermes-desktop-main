@@ -412,16 +412,22 @@ function loadSkills() {
 }
 
 window.toggleSkill = function(skillName, btn) {
-    // Mock toggle capability
-    if (btn.innerText.includes('Disable')) {
-        btn.innerHTML = `<i class="fas fa-check"></i> Enable`;
-        btn.style.color = "gray";
-        btn.style.borderColor = "gray";
-    } else {
-        btn.innerHTML = `<i class="fas fa-power-off"></i> Disable`;
-        btn.style.color = "";
-        btn.style.borderColor = "";
-    }
+    const isDisabling = btn.innerText.includes('Disable');
+    fetch('/api/settings/modules/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: skillName, enabled: !isDisabling })
+    }).then(r => r.json()).then(() => {
+        if (isDisabling) {
+            btn.innerHTML = `<i class="fas fa-check"></i> Enable`;
+            btn.style.color = "gray";
+            btn.style.borderColor = "gray";
+        } else {
+            btn.innerHTML = `<i class="fas fa-power-off"></i> Disable`;
+            btn.style.color = "";
+            btn.style.borderColor = "";
+        }
+    }).catch(err => alert('Failed to toggle skill: ' + err.message));
 };
 
 function loadGatewayInfo() {
@@ -836,8 +842,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('btn-purge-sessions')?.addEventListener('click', () => {
         if (!confirm('⚠️ This will permanently delete ALL session history. Are you sure?')) return;
-        // Uses existing session-delete pattern per each session
-        alert('Session purge initiated. In production mode, this cascades through the database.');
+        fetch('/api/settings/purge-sessions', { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                alert(data.message || 'All sessions purged.');
+                loadSessions();
+                fetchStats();
+            })
+            .catch(err => alert('Failed: ' + err.message));
     });
 
     document.getElementById('btn-reset-config')?.addEventListener('click', () => {
